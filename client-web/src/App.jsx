@@ -1524,7 +1524,6 @@ function App() {
           </div>
         </div>
       )}
-      <Footer onNavigate={handleNavigate} />
       </div>
     </ClickSpark>
   )
