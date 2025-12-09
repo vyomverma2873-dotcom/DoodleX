@@ -1273,7 +1273,11 @@ function App() {
   return (
     <ClickSpark sparkColor="#FFD700" sparkSize={12} sparkRadius={20} sparkCount={10} duration={500}>
       <div className="app">
-      <div className="game">
+      <div 
+        className="game"
+        onClick={() => voiceChatRef.current?.resumeAudioContext?.()}
+        onTouchStart={() => voiceChatRef.current?.resumeAudioContext?.()}
+      >
         <div className="game-header">
           <div className="game-info">
             <div className={`timer ${timeRemaining <= 10 ? 'warning' : ''}`}>

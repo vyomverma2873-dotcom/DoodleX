@@ -1,15 +1,32 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import './VoiceChat.css'
 
-// WebRTC configuration with public STUN servers
+// WebRTC configuration with STUN and free TURN servers for mobile NAT traversal
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Free TURN servers for better mobile connectivity
+    { 
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ],
+  iceCandidatePoolSize: 10
 }
 
 const VoiceChat = forwardRef(({ 
@@ -75,6 +92,28 @@ const VoiceChat = forwardRef(({
     setSpeakingPlayers(new Set())
   }, [])
 
+  // Resume audio context and pending audio on mobile (handles iOS restrictions)
+  const resumeAudioContext = useCallback(async () => {
+    // Resume audio context if suspended
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      try {
+        await audioContextRef.current.resume()
+        console.log('Audio context resumed')
+      } catch (err) {
+        console.error('Failed to resume audio context:', err)
+      }
+    }
+    
+    // Try to play any audio elements that were blocked
+    document.querySelectorAll('audio[data-needs-play="true"]').forEach(audio => {
+      audio.play().then(() => {
+        audio.dataset.needsPlay = 'false'
+      }).catch(err => {
+        console.log('Still cannot play audio:', err)
+      })
+    })
+  }, [])
+
   // Get user media and set up audio analysis
   const initializeVoice = useCallback(async () => {
     try {
@@ -89,8 +128,14 @@ const VoiceChat = forwardRef(({
       localStreamRef.current = stream
       setMicPermission('granted')
       
-      // Set up audio analysis for speaking detection
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)()
+      // Create audio context with mobile-compatible settings
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      audioContextRef.current = new AudioContext()
+      
+      // Resume audio context if suspended (iOS requirement)
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume()
+      }
       const source = audioContextRef.current.createMediaStreamSource(stream)
       analyserRef.current = audioContextRef.current.createAnalyser()
       analyserRef.current.fftSize = 256
@@ -166,11 +211,13 @@ const VoiceChat = forwardRef(({
       }
     }
     
-    // Handle incoming audio
+    // Handle incoming audio with mobile-compatible settings
     pc.ontrack = (event) => {
-      const audio = new Audio()
+      const audio = document.createElement('audio')
       audio.srcObject = event.streams[0]
       audio.autoplay = true
+      audio.playsInline = true // Required for iOS
+      audio.setAttribute('playsinline', '') // Attribute form for older browsers
       audio.id = `audio-${targetId}`
       
       // Remove existing audio element if any
@@ -178,6 +225,16 @@ const VoiceChat = forwardRef(({
       if (existing) existing.remove()
       
       document.body.appendChild(audio)
+      
+      // Handle iOS Safari autoplay restrictions
+      const playPromise = audio.play()
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.log('Audio autoplay blocked, will play on user interaction:', err)
+          // Store reference to retry on user interaction
+          audio.dataset.needsPlay = 'true'
+        })
+      }
       
       setVoiceConnected(prev => new Set([...prev, targetId]))
     }
@@ -203,6 +260,9 @@ const VoiceChat = forwardRef(({
   const joinVoice = useCallback(async () => {
     setIsJoiningVoice(true)
     try {
+      // Resume any suspended audio context first (mobile requirement)
+      await resumeAudioContext()
+      
       await initializeVoice()
       setIsVoiceEnabled(true)
       
@@ -230,7 +290,7 @@ const VoiceChat = forwardRef(({
     } finally {
       setIsJoiningVoice(false)
     }
-  }, [initializeVoice, socket, roomId, players, playerId, createPeerConnection])
+  }, [initializeVoice, socket, roomId, players, playerId, createPeerConnection, resumeAudioContext])
 
   // Leave voice chat
   const leaveVoice = useCallback(() => {
@@ -442,6 +502,7 @@ const VoiceChat = forwardRef(({
     leaveVoice,
     toggleMute,
     togglePlayerAudio,
+    resumeAudioContext, // Expose for parent to call on user interaction
     getPlayerVoiceStatus: (player) => {
       const isSelf = player.id === playerId
       const isConnected = isSelf ? isVoiceEnabled : voiceConnected.has(player.id)
@@ -450,7 +511,7 @@ const VoiceChat = forwardRef(({
       const isLocallyMuted = locallyMutedPlayers.has(player.id)
       return { isConnected, playerMuted, playerSpeaking, isLocallyMuted }
     }
-  }), [isVoiceEnabled, isMuted, micPermission, speakingPlayers, mutedPlayers, voiceConnected, locallyMutedPlayers, isJoiningVoice, joinVoice, leaveVoice, toggleMute, togglePlayerAudio, playerId])
+  }), [isVoiceEnabled, isMuted, micPermission, speakingPlayers, mutedPlayers, voiceConnected, locallyMutedPlayers, isJoiningVoice, joinVoice, leaveVoice, toggleMute, togglePlayerAudio, resumeAudioContext, playerId])
 
   // Notify parent of state changes
   useEffect(() => {

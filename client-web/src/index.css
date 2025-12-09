@@ -1356,7 +1356,89 @@ body {
   }
   
   .players-sidebar {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 8px 10px;
+    max-height: 50px;
+    min-height: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid var(--border);
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .players-sidebar h4 {
     display: none;
+  }
+  
+  .sidebar-player {
+    flex-shrink: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    min-width: max-content;
+  }
+  
+  .player-main-info {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+  }
+  
+  .player-left-section {
+    gap: 4px;
+  }
+  
+  .player-left-section .audio-waveform {
+    height: 16px;
+    min-width: 20px;
+    padding: 2px;
+  }
+  
+  .waveform-bar {
+    width: 2px;
+  }
+  
+  .rank-badge {
+    min-width: 18px;
+    font-size: 0.75rem;
+  }
+  
+  .rank-badge.gold,
+  .rank-badge.silver,
+  .rank-badge.bronze {
+    font-size: 0.9rem;
+  }
+  
+  .player-name-section {
+    font-size: 0.75rem;
+  }
+  
+  .you-badge {
+    font-size: 0.65rem;
+  }
+  
+  .player-score {
+    font-size: 0.75rem;
+    min-width: 35px;
+  }
+  
+  .player-right-section {
+    gap: 4px;
+  }
+  
+  .sidebar-mute-btn {
+    padding: 2px 4px;
+    font-size: 0.7rem;
+  }
+  
+  .muted-badge svg {
+    width: 10px;
+    height: 10px;
   }
   
   .chat-section {
