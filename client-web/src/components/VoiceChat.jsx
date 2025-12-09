@@ -414,28 +414,39 @@ const VoiceChat = forwardRef(({
       
       console.log(`[VoiceChat] Received offer from ${fromId}`)
       
+      const pc = createPeerConnection(fromId)
+      const signalingState = pc.signalingState
+      console.log(`[VoiceChat] Current signaling state with ${fromId}: ${signalingState}`)
+      
       // Check if we have a pending offer to this peer (collision)
       const hasPendingOffer = pendingOffersRef.current.has(fromId)
       
       // Use "polite peer" algorithm - the peer with lower ID is polite
       const isPolite = playerId < fromId
       
-      if (hasPendingOffer && !isPolite) {
-        // We're impolite and have a pending offer, ignore incoming offer
-        console.log(`[VoiceChat] Ignoring offer from ${fromId} - we have pending offer and are impolite`)
-        return
-      }
-      
-      const pc = createPeerConnection(fromId)
-      
-      try {
-        // If collision and we're polite, rollback our offer
-        if (hasPendingOffer && isPolite) {
-          console.log(`[VoiceChat] Rolling back our offer to ${fromId} - we are polite`)
-          await pc.setLocalDescription({ type: 'rollback' })
-          pendingOffersRef.current.delete(fromId)
+      // Handle offer collision - both sides sent offers
+      if (hasPendingOffer || signalingState === 'have-local-offer') {
+        if (!isPolite) {
+          // We're impolite and have a pending offer, ignore incoming offer
+          console.log(`[VoiceChat] Ignoring offer from ${fromId} - we have pending offer and are impolite`)
+          return
         }
         
+        // We're polite, rollback our offer and accept theirs
+        console.log(`[VoiceChat] Rolling back our offer to ${fromId} - we are polite`)
+        try {
+          await pc.setLocalDescription({ type: 'rollback' })
+          pendingOffersRef.current.delete(fromId)
+        } catch (rollbackErr) {
+          console.error(`[VoiceChat] Rollback failed for ${fromId}:`, rollbackErr)
+          // If rollback fails and we're in stable state, we can proceed
+          if (pc.signalingState !== 'stable') {
+            return
+          }
+        }
+      }
+      
+      try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer))
         
         // Apply any queued ICE candidates now that we have remote description
@@ -468,15 +479,30 @@ const VoiceChat = forwardRef(({
       // Clear pending offer flag
       pendingOffersRef.current.delete(fromId)
       
+      // Check signaling state before setting remote description
+      const signalingState = pc.signalingState
+      console.log(`[VoiceChat] Signaling state for ${fromId}: ${signalingState}`)
+      
+      if (signalingState === 'stable') {
+        // Already connected or rolled back, ignore this answer
+        console.log(`[VoiceChat] Ignoring answer from ${fromId} - connection already stable`)
+        return
+      }
+      
+      if (signalingState === 'closed') {
+        console.log(`[VoiceChat] Ignoring answer from ${fromId} - connection closed`)
+        return
+      }
+      
       try {
-        if (pc.signalingState === 'have-local-offer') {
+        if (signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(answer))
           console.log(`[VoiceChat] Set remote description for ${fromId}`)
           
           // Apply any queued ICE candidates now that we have remote description
           await applyQueuedIceCandidates(fromId)
         } else {
-          console.warn(`[VoiceChat] Unexpected signaling state for ${fromId}: ${pc.signalingState}`)
+          console.warn(`[VoiceChat] Unexpected signaling state for ${fromId}: ${signalingState}`)
         }
       } catch (err) {
         console.error(`[VoiceChat] Failed to handle voice answer from ${fromId}:`, err)
