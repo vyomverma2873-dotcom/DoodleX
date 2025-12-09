@@ -56,11 +56,18 @@ const VoiceChat = forwardRef(({
   const analyserRef = useRef(null)
   const speakingCheckIntervalRef = useRef(null)
   const isMutedRef = useRef(isMuted)
+  const isVoiceEnabledRef = useRef(isVoiceEnabled) // Ref for voice enabled state
+  const pendingOffersRef = useRef(new Map()) // Track pending offers to avoid collisions
+  const pendingIceCandidatesRef = useRef(new Map()) // Queue ICE candidates until remote description is set
 
   // Keep refs in sync with state
   useEffect(() => {
     isMutedRef.current = isMuted
   }, [isMuted])
+  
+  useEffect(() => {
+    isVoiceEnabledRef.current = isVoiceEnabled
+  }, [isVoiceEnabled])
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -187,22 +194,35 @@ const VoiceChat = forwardRef(({
 
   // Create peer connection to another player
   const createPeerConnection = useCallback((targetId) => {
+    // Return existing connection if available and not closed
     if (peerConnectionsRef.current.has(targetId)) {
-      return peerConnectionsRef.current.get(targetId)
+      const existingPc = peerConnectionsRef.current.get(targetId)
+      if (existingPc.connectionState !== 'closed' && existingPc.connectionState !== 'failed') {
+        return existingPc
+      }
+      // Clean up old connection
+      existingPc.close()
+      peerConnectionsRef.current.delete(targetId)
     }
     
+    console.log(`[VoiceChat] Creating peer connection to ${targetId}`)
     const pc = new RTCPeerConnection(RTC_CONFIG)
     
     // Add local stream tracks
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
+      const tracks = localStreamRef.current.getTracks()
+      console.log(`[VoiceChat] Adding ${tracks.length} tracks to peer connection`)
+      tracks.forEach(track => {
         pc.addTrack(track, localStreamRef.current)
       })
+    } else {
+      console.warn('[VoiceChat] No local stream available when creating peer connection')
     }
     
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log(`[VoiceChat] Sending ICE candidate to ${targetId}`)
         socket.emit('voiceIceCandidate', {
           roomId,
           targetId,
@@ -211,38 +231,63 @@ const VoiceChat = forwardRef(({
       }
     }
     
+    // Log ICE connection state changes
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[VoiceChat] ICE connection state with ${targetId}: ${pc.iceConnectionState}`)
+    }
+    
     // Handle incoming audio with mobile-compatible settings
     pc.ontrack = (event) => {
+      console.log(`[VoiceChat] Received audio track from ${targetId}`, event.streams)
+      
+      // Remove existing audio element if any
+      const existing = document.getElementById(`audio-${targetId}`)
+      if (existing) {
+        existing.srcObject = null
+        existing.remove()
+      }
+      
       const audio = document.createElement('audio')
+      audio.id = `audio-${targetId}`
       audio.srcObject = event.streams[0]
       audio.autoplay = true
       audio.playsInline = true // Required for iOS
       audio.setAttribute('playsinline', '') // Attribute form for older browsers
-      audio.id = `audio-${targetId}`
-      
-      // Remove existing audio element if any
-      const existing = document.getElementById(`audio-${targetId}`)
-      if (existing) existing.remove()
+      audio.volume = 1.0 // Ensure full volume
+      audio.muted = false // Ensure not muted
       
       document.body.appendChild(audio)
       
-      // Handle iOS Safari autoplay restrictions
-      const playPromise = audio.play()
-      if (playPromise !== undefined) {
-        playPromise.catch(err => {
-          console.log('Audio autoplay blocked, will play on user interaction:', err)
-          // Store reference to retry on user interaction
+      // Handle playback with retries for mobile browsers
+      const attemptPlay = async (retries = 3) => {
+        try {
+          await audio.play()
+          console.log(`[VoiceChat] Audio playing from ${targetId}`)
+          audio.dataset.needsPlay = 'false'
+        } catch (err) {
+          console.log(`[VoiceChat] Audio autoplay blocked for ${targetId}:`, err.message)
           audio.dataset.needsPlay = 'true'
-        })
+          if (retries > 0) {
+            setTimeout(() => attemptPlay(retries - 1), 500)
+          }
+        }
       }
+      attemptPlay()
       
       setVoiceConnected(prev => new Set([...prev, targetId]))
     }
     
     pc.onconnectionstatechange = () => {
+      console.log(`[VoiceChat] Connection state with ${targetId}: ${pc.connectionState}`)
+      if (pc.connectionState === 'connected') {
+        console.log(`[VoiceChat] Successfully connected to ${targetId}`)
+      }
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         const audio = document.getElementById(`audio-${targetId}`)
-        if (audio) audio.remove()
+        if (audio) {
+          audio.srcObject = null
+          audio.remove()
+        }
         
         setVoiceConnected(prev => {
           const newSet = new Set(prev)
@@ -259,34 +304,56 @@ const VoiceChat = forwardRef(({
   // Join voice chat
   const joinVoice = useCallback(async () => {
     setIsJoiningVoice(true)
+    console.log('[VoiceChat] Joining voice chat...')
+    
     try {
       // Resume any suspended audio context first (mobile requirement)
       await resumeAudioContext()
       
       await initializeVoice()
       setIsVoiceEnabled(true)
+      isVoiceEnabledRef.current = true // Update ref immediately
+      
+      console.log('[VoiceChat] Voice initialized, notifying server')
       
       // Notify server that we're joining voice
       socket.emit('voiceJoin', { roomId })
       
-      // Create offers to all existing players
+      // Small delay to ensure server broadcasts voiceJoin before we send offers
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Create offers to all existing players who might be in voice
       const otherPlayers = players.filter(p => p.id !== playerId)
+      console.log(`[VoiceChat] Creating offers to ${otherPlayers.length} other players`)
+      
       for (const player of otherPlayers) {
         const pc = createPeerConnection(player.id)
         try {
-          const offer = await pc.createOffer()
+          const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: false
+          })
           await pc.setLocalDescription(offer)
+          
+          // Mark as pending offer for collision detection
+          pendingOffersRef.current.set(player.id, true)
+          
+          console.log(`[VoiceChat] Sending offer to ${player.id}`)
           socket.emit('voiceOffer', {
             roomId,
             targetId: player.id,
             offer
           })
         } catch (err) {
-          console.error('Failed to create offer for', player.id, err)
+          console.error(`[VoiceChat] Failed to create offer for ${player.id}:`, err)
         }
       }
+      
+      console.log('[VoiceChat] Voice chat joined successfully')
     } catch (err) {
-      console.error('Failed to join voice:', err)
+      console.error('[VoiceChat] Failed to join voice:', err)
+      setIsVoiceEnabled(false)
+      isVoiceEnabledRef.current = false
     } finally {
       setIsJoiningVoice(false)
     }
@@ -337,46 +404,130 @@ const VoiceChat = forwardRef(({
   useEffect(() => {
     if (!socket) return
 
-    // Handle incoming voice offer
+    // Handle incoming voice offer with proper collision detection
     const handleVoiceOffer = async ({ fromId, offer }) => {
-      if (!isVoiceEnabled) return
+      // Use ref to get current voice enabled state (avoids stale closure)
+      if (!isVoiceEnabledRef.current) {
+        console.log(`[VoiceChat] Ignoring offer from ${fromId} - voice not enabled`)
+        return
+      }
+      
+      console.log(`[VoiceChat] Received offer from ${fromId}`)
+      
+      // Check if we have a pending offer to this peer (collision)
+      const hasPendingOffer = pendingOffersRef.current.has(fromId)
+      
+      // Use "polite peer" algorithm - the peer with lower ID is polite
+      const isPolite = playerId < fromId
+      
+      if (hasPendingOffer && !isPolite) {
+        // We're impolite and have a pending offer, ignore incoming offer
+        console.log(`[VoiceChat] Ignoring offer from ${fromId} - we have pending offer and are impolite`)
+        return
+      }
       
       const pc = createPeerConnection(fromId)
+      
       try {
+        // If collision and we're polite, rollback our offer
+        if (hasPendingOffer && isPolite) {
+          console.log(`[VoiceChat] Rolling back our offer to ${fromId} - we are polite`)
+          await pc.setLocalDescription({ type: 'rollback' })
+          pendingOffersRef.current.delete(fromId)
+        }
+        
         await pc.setRemoteDescription(new RTCSessionDescription(offer))
+        
+        // Apply any queued ICE candidates now that we have remote description
+        await applyQueuedIceCandidates(fromId)
+        
         const answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
+        
+        console.log(`[VoiceChat] Sending answer to ${fromId}`)
         socket.emit('voiceAnswer', {
           roomId,
           targetId: fromId,
           answer
         })
       } catch (err) {
-        console.error('Failed to handle voice offer:', err)
+        console.error(`[VoiceChat] Failed to handle voice offer from ${fromId}:`, err)
       }
     }
 
     // Handle incoming voice answer
     const handleVoiceAnswer = async ({ fromId, answer }) => {
+      console.log(`[VoiceChat] Received answer from ${fromId}`)
+      
       const pc = peerConnectionsRef.current.get(fromId)
-      if (!pc) return
+      if (!pc) {
+        console.warn(`[VoiceChat] No peer connection found for ${fromId}`)
+        return
+      }
+      
+      // Clear pending offer flag
+      pendingOffersRef.current.delete(fromId)
       
       try {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer))
+        if (pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer))
+          console.log(`[VoiceChat] Set remote description for ${fromId}`)
+          
+          // Apply any queued ICE candidates now that we have remote description
+          await applyQueuedIceCandidates(fromId)
+        } else {
+          console.warn(`[VoiceChat] Unexpected signaling state for ${fromId}: ${pc.signalingState}`)
+        }
       } catch (err) {
-        console.error('Failed to handle voice answer:', err)
+        console.error(`[VoiceChat] Failed to handle voice answer from ${fromId}:`, err)
       }
     }
-
-    // Handle ICE candidate
+    
+    // Helper to apply queued ICE candidates - defined before use
+    const applyQueuedIceCandidates = async (peerId) => {
+      const candidates = pendingIceCandidatesRef.current.get(peerId)
+      if (!candidates || candidates.length === 0) return
+      
+      const pc = peerConnectionsRef.current.get(peerId)
+      if (!pc || !pc.remoteDescription) return
+      
+      console.log(`[VoiceChat] Applying ${candidates.length} queued ICE candidates for ${peerId}`)
+      for (const candidate of candidates) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate))
+        } catch (err) {
+          console.error(`[VoiceChat] Failed to add queued ICE candidate:`, err)
+        }
+      }
+      pendingIceCandidatesRef.current.delete(peerId)
+    }
+    
+    // Handle ICE candidate with queuing for early candidates
     const handleIceCandidate = async ({ fromId, candidate }) => {
       const pc = peerConnectionsRef.current.get(fromId)
-      if (!pc) return
+      if (!pc) {
+        // Queue candidate for when peer connection is created
+        if (!pendingIceCandidatesRef.current.has(fromId)) {
+          pendingIceCandidatesRef.current.set(fromId, [])
+        }
+        pendingIceCandidatesRef.current.get(fromId).push(candidate)
+        console.log(`[VoiceChat] Queuing ICE candidate from ${fromId} - no peer connection yet`)
+        return
+      }
       
       try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate))
+        if (pc.remoteDescription && pc.remoteDescription.type) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate))
+        } else {
+          // Queue candidate until remote description is set
+          if (!pendingIceCandidatesRef.current.has(fromId)) {
+            pendingIceCandidatesRef.current.set(fromId, [])
+          }
+          pendingIceCandidatesRef.current.get(fromId).push(candidate)
+          console.log(`[VoiceChat] Queuing ICE candidate from ${fromId} - no remote description yet`)
+        }
       } catch (err) {
-        console.error('Failed to add ICE candidate:', err)
+        console.error(`[VoiceChat] Failed to add ICE candidate from ${fromId}:`, err)
       }
     }
 
@@ -415,20 +566,28 @@ const VoiceChat = forwardRef(({
 
     // Handle new player joining voice
     const handleVoiceJoin = async ({ playerId: joinedId }) => {
-      if (!isVoiceEnabled || joinedId === playerId) return
+      // Use ref to avoid stale closure
+      if (!isVoiceEnabledRef.current || joinedId === playerId) return
+      
+      console.log(`[VoiceChat] Player ${joinedId} joined voice, creating offer`)
       
       // Create offer to newly joined player
       const pc = createPeerConnection(joinedId)
       try {
         const offer = await pc.createOffer()
         await pc.setLocalDescription(offer)
+        
+        // Mark as pending offer for collision detection
+        pendingOffersRef.current.set(joinedId, true)
+        
         socket.emit('voiceOffer', {
           roomId,
           targetId: joinedId,
           offer
         })
+        console.log(`[VoiceChat] Sent offer to ${joinedId}`)
       } catch (err) {
-        console.error('Failed to create offer for new player:', err)
+        console.error(`[VoiceChat] Failed to create offer for ${joinedId}:`, err)
       }
     }
 
@@ -479,7 +638,7 @@ const VoiceChat = forwardRef(({
       socket.off('voiceJoin', handleVoiceJoin)
       socket.off('voiceLeave', handleVoiceLeave)
     }
-  }, [socket, roomId, playerId, isVoiceEnabled, createPeerConnection])
+  }, [socket, roomId, playerId, createPeerConnection])
 
   // Cleanup on unmount
   useEffect(() => {
