@@ -1,0 +1,306 @@
+# Web Deployment Instructions for Mehfil
+
+## Overview
+
+Deploy the Mehfil web client and server to make it accessible to anyone with a browser.
+
+---
+
+## Part 1: Deploy the Server
+
+The Socket.IO server needs to be deployed to a platform that supports WebSockets.
+
+### Option A: Railway (Recommended)
+
+Railway offers easy deployment with WebSocket support.
+
+1. **Create Railway Account**
+   - Go to https://railway.app
+   - Sign up with GitHub
+
+2. **Deploy from GitHub**
+   ```bash
+   # Push your code to GitHub first
+   cd Mehfil
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git remote add origin https://github.com/YOUR_USERNAME/mehfil.git
+   git push -u origin main
+   ```
+
+3. **Create New Project on Railway**
+   - Click "New Project"
+   - Select "Deploy from GitHub repo"
+   - Select your mehfil repository
+   - Set the root directory to `server`
+
+4. **Configure Environment Variables**
+   In Railway dashboard, add:
+   ```
+   PORT=3001
+   NODE_ENV=production
+   CORS_ORIGINS=https://your-web-app.vercel.app,https://mehfil.vercel.app
+   ```
+
+5. **Get Your Server URL**
+   - Railway provides a URL like `mehfil-server.railway.app`
+   - This is your production server URL
+
+### Option B: Render
+
+1. **Create Render Account**
+   - Go to https://render.com
+   - Sign up with GitHub
+
+2. **Create Web Service**
+   - Click "New +" → "Web Service"
+   - Connect your GitHub repo
+   - Set Root Directory to `server`
+   - Build Command: `npm install`
+   - Start Command: `node server.js`
+
+3. **Add Environment Variables**
+   ```
+   PORT=3001
+   NODE_ENV=production
+   CORS_ORIGINS=https://your-app.vercel.app
+   ```
+
+### Option C: Fly.io
+
+```bash
+# Install flyctl
+curl -L https://fly.io/install.sh | sh
+
+# Login
+fly auth login
+
+# From server directory
+cd server
+fly launch
+
+# Deploy
+fly deploy
+```
+
+---
+
+## Part 2: Deploy the Web Client
+
+### Option A: Vercel (Recommended)
+
+1. **Install Vercel CLI**
+   ```bash
+   npm install -g vercel
+   ```
+
+2. **Configure Environment**
+   Create `client-web/.env.production`:
+   ```
+   VITE_SERVER_URL=https://your-server.railway.app
+   ```
+
+3. **Deploy**
+   ```bash
+   cd client-web
+   vercel
+   ```
+   Follow the prompts. Vercel will:
+   - Build your app
+   - Deploy to a unique URL
+   - Provide SSL automatically
+
+4. **Set Environment Variables in Vercel Dashboard**
+   - Go to your project settings
+   - Add `VITE_SERVER_URL` with your server URL
+
+### Option B: Netlify
+
+1. **Build the App**
+   ```bash
+   cd client-web
+   npm install
+   npm run build
+   ```
+
+2. **Deploy via Netlify CLI**
+   ```bash
+   npm install -g netlify-cli
+   netlify login
+   netlify deploy --prod --dir=dist
+   ```
+
+3. **Or Deploy via Netlify Dashboard**
+   - Go to https://app.netlify.com
+   - Drag and drop the `dist` folder
+   - Done!
+
+4. **Configure Environment Variables**
+   - Site settings → Build & deploy → Environment
+   - Add `VITE_SERVER_URL`
+
+### Option C: GitHub Pages (Static Only)
+
+Note: Requires server to be deployed elsewhere.
+
+1. **Build**
+   ```bash
+   cd client-web
+   npm run build
+   ```
+
+2. **Deploy to gh-pages**
+   ```bash
+   npm install -g gh-pages
+   gh-pages -d dist
+   ```
+
+---
+
+## Part 3: Update CORS Settings
+
+After deploying, update your server's CORS settings:
+
+1. **Get your web app URL** (e.g., `https://mehfil.vercel.app`)
+
+2. **Update server environment variable**
+   ```
+   CORS_ORIGINS=https://mehfil.vercel.app,http://localhost:5173
+   ```
+
+3. **Redeploy server** if needed
+
+---
+
+## Part 4: Custom Domain (Optional)
+
+### Vercel Custom Domain
+
+1. Go to Project Settings → Domains
+2. Add your domain (e.g., `mehfil.com`)
+3. Update DNS at your registrar:
+   - CNAME record: `@` → `cname.vercel-dns.com`
+   - Or A record: `@` → Vercel's IP
+
+### Railway Custom Domain
+
+1. Go to Service Settings → Custom Domains
+2. Add your domain
+3. Update DNS with provided values
+
+---
+
+## Part 5: Environment Variables Summary
+
+### Server (Railway/Render/Fly)
+```
+PORT=3001
+NODE_ENV=production
+CORS_ORIGINS=https://mehfil.vercel.app
+ADMIN_KEY=your-secret-admin-key
+```
+
+### Web Client (Vercel/Netlify)
+```
+VITE_SERVER_URL=https://mehfil-server.railway.app
+```
+
+---
+
+## Deployment Checklist
+
+- [ ] Server deployed and accessible
+- [ ] Server health check works: `https://your-server/health`
+- [ ] Web client deployed
+- [ ] Environment variables set correctly
+- [ ] CORS configured for web client domain
+- [ ] Test creating a room
+- [ ] Test joining a room from another device
+- [ ] Test drawing and guessing
+
+---
+
+## Sharing Your App
+
+Once deployed, share your Mehfil app:
+
+1. **Direct URL**
+   Share `https://mehfil.vercel.app`
+
+2. **Room Link**
+   Create shareable room links:
+   `https://mehfil.vercel.app?room=ABCDE`
+
+3. **QR Code**
+   Generate at https://www.qr-code-generator.com/
+
+---
+
+## GitHub Actions (Automatic Deployment)
+
+Create `.github/workflows/deploy.yml`:
+
+```yaml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Deploy to Railway
+        uses: bervProject/railway-deploy@main
+        with:
+          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          service: mehfil-server
+
+  deploy-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Install and Build
+        run: |
+          cd client-web
+          npm install
+          npm run build
+        env:
+          VITE_SERVER_URL: ${{ secrets.SERVER_URL }}
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.ORG_ID }}
+          vercel-project-id: ${{ secrets.PROJECT_ID }}
+          working-directory: ./client-web
+```
+
+---
+
+## Troubleshooting
+
+### WebSocket connection fails
+- Check CORS_ORIGINS includes your web domain
+- Ensure server supports WebSockets (Railway, Render do; some hosts don't)
+- Check browser console for specific errors
+
+### "Cannot connect to server"
+- Verify server is running: check `/health` endpoint
+- Confirm VITE_SERVER_URL is correct in web client
+- Check for HTTPS/HTTP mismatch
+
+### Slow connection
+- Use WebSocket transport priority in socket.io config
+- Consider Redis for scaling
+- Check server region matches user location
+
+---
+
+*This document is for Mehfil app. Last updated: December 2024*

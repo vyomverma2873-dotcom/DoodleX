@@ -1,0 +1,246 @@
+# Android APK Build Instructions for Mehfil
+
+## Overview
+
+Unlike iOS, Android allows you to install apps from any source by enabling "Unknown Sources" in settings. This makes distributing Android apps much simpler.
+
+---
+
+## Option 1: EAS Build (Recommended - Cloud Build)
+
+EAS (Expo Application Services) builds your app in the cloud. No Android Studio required.
+
+### Prerequisites:
+- Expo account (free at https://expo.dev)
+- Node.js installed
+
+### Steps:
+
+```bash
+# 1. Navigate to mobile client
+cd client-mobile
+
+# 2. Install dependencies
+npm install
+
+# 3. Install EAS CLI globally
+npm install -g eas-cli
+
+# 4. Login to Expo
+eas login
+
+# 5. Configure EAS for your project (first time only)
+eas build:configure
+
+# 6. Build APK (for direct sharing)
+eas build --platform android --profile preview
+
+# 7. Wait for build to complete (5-15 minutes)
+# EAS will provide a download link when done
+```
+
+### Build Profiles:
+
+The `eas.json` file defines different build types:
+
+- **preview**: Builds a debug APK for testing
+- **production**: Builds a signed AAB for Play Store
+
+```bash
+# Preview APK (for sharing)
+eas build --platform android --profile preview
+
+# Production AAB (for Play Store)
+eas build --platform android --profile production
+```
+
+---
+
+## Option 2: Local Build (Requires Android SDK)
+
+Build the APK on your own machine.
+
+### Prerequisites:
+- Java JDK 11+
+- Android SDK
+- Android NDK
+- Gradle
+
+### Steps:
+
+```bash
+# 1. Install Expo dev client
+cd client-mobile
+npm install
+
+# 2. Prebuild (creates native Android project)
+npx expo prebuild --platform android
+
+# 3. Navigate to android folder
+cd android
+
+# 4. Build debug APK
+./gradlew assembleDebug
+
+# 5. Find APK at:
+# android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+---
+
+## Option 3: Expo Development Build (For Testing)
+
+Create a development build that includes Expo development tools.
+
+```bash
+# Build development APK
+eas build --platform android --profile development
+```
+
+---
+
+## Installing APK on Android Device
+
+### Method 1: Direct Download
+
+1. Upload APK to cloud storage (Google Drive, Dropbox, etc.)
+2. Share download link with users
+3. On Android device:
+   - Open the link in browser
+   - Download the APK
+   - Tap to install
+   - If prompted, enable "Install from unknown sources"
+
+### Method 2: ADB Install
+
+```bash
+# Connect device via USB with USB debugging enabled
+adb install path/to/app-debug.apk
+```
+
+### Method 3: File Transfer
+
+1. Connect Android device to computer via USB
+2. Copy APK to device's Download folder
+3. On device, use File Manager to locate and install
+
+---
+
+## Enabling Unknown Sources (Required for APK Install)
+
+### Android 8.0+ (Oreo and later):
+
+1. Try to install the APK
+2. When prompted, tap "Settings"
+3. Enable "Allow from this source" for your browser/file manager
+4. Go back and install
+
+### Android 7.0 and earlier:
+
+1. Go to Settings → Security
+2. Enable "Unknown sources"
+3. Install the APK
+
+---
+
+## Updating the Server URL
+
+Before building, update the server URL in the mobile app:
+
+### Option 1: Environment Variable
+
+Create `.env` file in `client-mobile/`:
+```
+EXPO_PUBLIC_SERVER_URL=https://your-server.railway.app
+```
+
+Update `App.js`:
+```javascript
+const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || 'http://localhost:3001';
+```
+
+### Option 2: Direct Edit
+
+Edit `client-mobile/App.js` line 18:
+```javascript
+const SERVER_URL = 'https://your-production-server.com';
+```
+
+---
+
+## Build Checklist
+
+Before building for distribution:
+
+- [ ] Update `SERVER_URL` to production server
+- [ ] Update app version in `app.json`
+- [ ] Test on a real device
+- [ ] Create PNG assets from SVGs (see `assets/ASSETS_README.txt`)
+- [ ] Update `app.json` with your Expo username
+
+---
+
+## Troubleshooting
+
+### Build fails with "SDK version mismatch"
+```bash
+npx expo install --fix
+```
+
+### Build fails with signing errors
+```bash
+eas credentials
+# Follow prompts to create new keystore
+```
+
+### App crashes on launch
+- Check that SERVER_URL is correct
+- Ensure server is running and accessible
+- Check server logs for errors
+
+### "App not installed" error
+- Uninstall any previous version first
+- Clear package installer cache
+- Check if device has enough storage
+
+---
+
+## Sharing the APK
+
+### Option 1: Direct Link
+Upload to Google Drive, Dropbox, or any file hosting service.
+
+### Option 2: QR Code
+Generate a QR code for the download link:
+- https://www.qr-code-generator.com/
+
+### Option 3: Website Download
+Host on your website with a download button:
+```html
+<a href="path/to/mehfil.apk" download>
+  Download Mehfil for Android
+</a>
+```
+
+---
+
+## Quick Build Commands Reference
+
+```bash
+# Preview APK (debugging, internal testing)
+eas build --platform android --profile preview
+
+# Production AAB (Play Store)
+eas build --platform android --profile production
+
+# Development build (includes dev tools)
+eas build --platform android --profile development
+
+# Local debug build
+npx expo prebuild --platform android
+cd android && ./gradlew assembleDebug
+```
+
+---
+
+*This document is for Mehfil app. Last updated: December 2024*

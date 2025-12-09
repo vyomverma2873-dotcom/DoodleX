@@ -1,0 +1,281 @@
+# iOS Deployment Options for Mehfil
+
+## Understanding iOS App Distribution
+
+**IMPORTANT FOR NON-TECHNICAL USERS:**
+Unlike Android, Apple does NOT allow you to simply download and install apps from anywhere. iOS is designed to only run apps that Apple has approved or that you've specifically authorized through a developer account.
+
+This document explains ALL your options, clearly marking which ones cost money and which are free.
+
+---
+
+## Option 1: Expo Go (FREE - NO Apple Developer Account Required) ✅ RECOMMENDED
+
+**Best for:** Testing, demos, and casual sharing with friends
+
+**What is Expo Go?**
+Expo Go is a free app from the App Store that can run Expo-based apps without needing to build or sign anything.
+
+### How to Use:
+
+1. **Install Expo Go** on your iPhone
+   - Open App Store
+   - Search "Expo Go"
+   - Download (FREE)
+
+2. **Run the Mehfil app**
+   - On a computer, navigate to the `client-mobile` folder
+   - Run `npm install` then `expo start`
+   - A QR code will appear in the terminal
+   - Open the Camera app on your iPhone and scan the QR code
+   - Tap the notification to open in Expo Go
+
+3. **Share with others**
+   - Publish to Expo: `expo publish`
+   - Share the generated URL (e.g., `exp://exp.host/@username/mehfil`)
+   - Others can open this URL in their Expo Go app
+
+### Limitations:
+- Requires Expo Go app installed
+- Needs internet connection to the Expo server
+- Some native features may not work
+- Not a "standalone" app
+
+---
+
+## Option 2: TestFlight (Requires PAID Apple Developer Account - $99/year)
+
+**Best for:** Beta testing with up to 10,000 users
+
+**What is TestFlight?**
+Apple's official beta testing platform. You can invite users via email to test your app before App Store release.
+
+### Requirements:
+- Apple Developer Program membership ($99/year)
+- Mac computer with Xcode
+- Apple ID of testers
+
+### Steps:
+
+1. **Join Apple Developer Program**
+   - Visit https://developer.apple.com/programs/
+   - Pay $99/year
+
+2. **Set up EAS Build**
+   ```bash
+   cd client-mobile
+   npm install -g eas-cli
+   eas login
+   eas build:configure
+   ```
+
+3. **Build for iOS**
+   ```bash
+   eas build --platform ios --profile production
+   ```
+   - EAS will guide you through creating certificates and provisioning profiles
+
+4. **Submit to TestFlight**
+   ```bash
+   eas submit --platform ios
+   ```
+   - Or manually upload the .ipa via Xcode or Transporter app
+
+5. **Invite Testers**
+   - Go to App Store Connect (https://appstoreconnect.apple.com)
+   - Navigate to your app → TestFlight
+   - Add internal testers (up to 100, must be on your team)
+   - Add external testers (up to 10,000, via email)
+
+6. **Testers Install**
+   - Testers receive email invitation
+   - They install TestFlight app from App Store
+   - Accept invitation and install your app
+
+### Pros:
+- Real standalone app
+- Up to 10,000 external testers
+- Automatic updates
+- 90-day testing period per build
+
+### Cons:
+- Costs $99/year
+- Requires Apple review for external testers (usually quick)
+- Builds expire after 90 days
+
+---
+
+## Option 3: Ad-Hoc Distribution (Requires PAID Apple Developer Account)
+
+**Best for:** Distributing to specific devices (up to 100)
+
+**What is Ad-Hoc?**
+A direct installation method where you build an .ipa file specifically signed for certain device IDs (UDIDs).
+
+### Requirements:
+- Apple Developer Program membership ($99/year)
+- UDID of every device you want to install on
+- Mac with Xcode (or use EAS Build)
+
+### Getting Device UDIDs:
+
+**On iPhone:**
+1. Connect iPhone to a Mac
+2. Open Finder (macOS Catalina+) or iTunes
+3. Click on the device
+4. Click on the device info (Serial Number area) until UDID appears
+5. Copy the UDID
+
+**Or use online services:**
+- https://get.udid.io/ (open on iPhone Safari)
+
+### Steps:
+
+1. **Collect UDIDs**
+   - Get the UDID from every iPhone that will install the app
+   - You can register up to 100 devices per year
+
+2. **Register Devices in Apple Developer Portal**
+   - Go to https://developer.apple.com
+   - Certificates, Identifiers & Profiles → Devices
+   - Add each device's UDID
+
+3. **Create Ad-Hoc Provisioning Profile**
+   - Certificates, Identifiers & Profiles → Profiles
+   - Create new profile → Ad Hoc
+   - Select your app and include registered devices
+
+4. **Build with EAS**
+   ```bash
+   eas build --platform ios --profile preview
+   ```
+
+5. **Distribute the .ipa**
+   - Share the .ipa file directly
+   - Users can install via Apple Configurator, AltStore, or Sideloadly
+   - Or host on a website with proper manifest (requires HTTPS)
+
+### Pros:
+- Standalone app, no App Store review
+- Works offline
+- No expiration (until provisioning profile expires, typically 1 year)
+
+### Cons:
+- Maximum 100 devices per developer account per year
+- Must know UDID in advance
+- Need to rebuild if adding new devices
+- Costs $99/year
+
+---
+
+## Option 4: Enterprise Distribution (EXPENSIVE - Companies Only)
+
+**What is Enterprise?**
+For large companies to distribute internal apps to employees without UDID limits.
+
+### Requirements:
+- Apple Developer Enterprise Program ($299/year)
+- Must be a company with D-U-N-S number
+- App must be for internal company use only
+
+### Pros:
+- Unlimited device installs
+- No UDID collection needed
+
+### Cons:
+- $299/year
+- Strict eligibility requirements
+- Violating terms (public distribution) gets you banned
+- **NOT SUITABLE for public app distribution**
+
+---
+
+## Summary Comparison
+
+| Option | Cost | Max Users | UDID Required? | Apple Review? |
+|--------|------|-----------|----------------|---------------|
+| Expo Go | FREE | Unlimited | No | No |
+| TestFlight | $99/year | 10,000 | No | Yes (quick) |
+| Ad-Hoc | $99/year | 100 | Yes | No |
+| Enterprise | $299/year | Unlimited | No | No |
+
+---
+
+## Recommendation for Mehfil
+
+**For personal use and demos:** Use **Expo Go** (FREE)
+
+**For beta testing with many users:** Use **TestFlight** ($99/year)
+
+**For distributing to a small, known group:** Use **Ad-Hoc** ($99/year)
+
+---
+
+## Quick Start: Expo Go (The Free Option)
+
+```bash
+# 1. Navigate to mobile client
+cd client-mobile
+
+# 2. Install dependencies
+npm install
+
+# 3. Start Expo
+npx expo start
+
+# 4. Scan QR code with iPhone camera
+# 5. App opens in Expo Go
+```
+
+To share with others:
+```bash
+# Publish to Expo's servers
+npx expo publish
+
+# Share the generated URL
+# Example: exp://exp.host/@yourname/mehfil
+```
+
+---
+
+## Building Standalone iOS App (Requires Developer Account)
+
+```bash
+# Install EAS CLI
+npm install -g eas-cli
+
+# Login to Expo account
+eas login
+
+# Configure your project
+eas build:configure
+
+# Build for iOS (TestFlight/App Store)
+eas build --platform ios --profile production
+
+# Build for Ad-Hoc (direct install)
+eas build --platform ios --profile preview
+
+# Submit to App Store/TestFlight
+eas submit --platform ios
+```
+
+---
+
+## Frequently Asked Questions
+
+**Q: Can I install an .ipa on my friend's iPhone without a developer account?**
+A: No. iOS requires all apps to be signed, and signing requires an Apple Developer account or using Expo Go.
+
+**Q: Is there any way to avoid the $99 fee?**
+A: Yes, use Expo Go. It's completely free and works great for testing and sharing.
+
+**Q: Can I use a free Apple Developer account?**
+A: Free accounts can only run apps on your own devices via Xcode, and apps expire after 7 days.
+
+**Q: What's the easiest option for a demo?**
+A: Expo Go. Install it, scan the QR code, done.
+
+---
+
+*This document is for Mehfil app. Last updated: December 2024*

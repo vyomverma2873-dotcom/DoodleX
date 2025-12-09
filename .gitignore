@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+.expo/
+*.apk
+*.aab
+*.ipa
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/
+
+# Expo
+.expo-shared/
+
+# Android
+android/app/build/
+android/.gradle/
+*.keystore
+!debug.keystore
+
+# iOS
+ios/Pods/
+*.xcworkspace
+*.xcuserdata
+
+# Misc
+.cache/
+tmp/
+temp/
+
+# Personal/test audio files
+*.mp3
+!client-web/public/*.mp3
