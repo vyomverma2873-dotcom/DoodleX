@@ -23,7 +23,10 @@ import {
 } from 'react-native-gesture-handler';
 
 // Configuration
-const SERVER_URL = 'http://localhost:3001'; // Change this to your server URL
+// ⚠️ IMPORTANT: Update this URL before building the APK!
+// For production: Use your deployed server URL (e.g., 'https://your-server.railway.app')
+// For local testing with ngrok: Use your ngrok URL (e.g., 'https://abc123.ngrok.io')
+const SERVER_URL = 'https://your-server-url.com'; // <-- UPDATE THIS BEFORE BUILDING
 const COLORS = ['#212121', '#F44336', '#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#FFFFFF'];
 const SCREENS = { HOME: 'home', LOBBY: 'lobby', GAME: 'game' };
 
