@@ -93,13 +93,17 @@ async function deleteRoomFromMongo(roomId) {
 
 // Save game history to MongoDB
 async function saveGameHistory(roomId, players, settings, startTime) {
-  if (!isMongoConnected()) return;
+  if (!isMongoConnected()) {
+    console.log('⚠️  Skipping game history save - MongoDB not connected');
+    return;
+  }
   
   try {
+    console.log(`💾 Saving game history for room: ${roomId}`);
     const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
     const duration = Math.floor((Date.now() - startTime) / 1000);
     
-    await GameHistory.create({
+    const gameHistory = {
       roomId,
       players: sortedPlayers.map((p, idx) => ({
         id: p.id,
@@ -119,9 +123,14 @@ async function saveGameHistory(roomId, players, settings, startTime) {
         difficulty: settings.difficulty,
         hintsEnabled: settings.hintsEnabled
       }
-    });
+    };
+    
+    console.log(`📝 Game history data:`, JSON.stringify(gameHistory, null, 2));
+    await GameHistory.create(gameHistory);
+    console.log(`✅ Game history saved successfully for room: ${roomId}`);
   } catch (err) {
-    console.error('Failed to save game history:', err.message);
+    console.error('❌ Failed to save game history:', err.message);
+    console.error('Error stack:', err.stack);
   }
 }
 
