@@ -7,14 +7,17 @@ const { v4: uuidv4 } = require('uuid');
 
 const { WordBank } = require('./game/WordBank');
 const { Room } = require('./game/Room');
-const { filterProfanity } = require('./utils/profanityFilter');
+const { filterProfanity, sanitizeHtml } = require('./utils/profanityFilter');
+const { connectDB, isMongoConnected } = require('./db/mongodb');
+const RoomModel = require('./models/Room.model');
+const GameHistory = require('./models/GameHistory.model');
 
 const app = express();
 const server = http.createServer(app);
 
 const CORS_ORIGINS = process.env.CORS_ORIGINS 
   ? process.env.CORS_ORIGINS.split(',') 
-  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:19006', 'http://localhost:8081'];
+  : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:19006', 'http://localhost:8081', 'https://doodlex.vercel.app'];
 
 const io = new Server(server, {
   cors: {
@@ -38,7 +41,89 @@ const guessRateLimits = new Map(); // playerId -> { count, resetTime }
 const GUESS_LIMIT = 3;
 const GUESS_WINDOW_MS = 5000;
 
+// Rate limiting for strokes
+const strokeRateLimits = new Map(); // playerId -> { count, resetTime }
+const STROKE_LIMIT = 100; // Max strokes per window
+const STROKE_WINDOW_MS = 1000; // Per second
+const MAX_POINTS_PER_STROKE = 1000; // Max points in a single stroke
+
 // ==================== Helper Functions ====================
+
+// Save room to MongoDB
+async function saveRoomToMongo(room) {
+  if (!isMongoConnected()) return;
+  
+  try {
+    const roomData = {
+      roomId: room.id,
+      hostId: room.hostId,
+      players: room.players,
+      stage: room.stage,
+      currentDrawerId: room.currentDrawerId,
+      currentWord: room.currentWord,
+      currentRound: room.currentRound,
+      strokes: room.strokes,
+      roundStartTime: room.roundStartTime,
+      playersGuessedCorrectly: Array.from(room.playersGuessedCorrectly || []),
+      drawerOrder: room.drawerOrder,
+      drawerIndex: room.drawerIndex,
+      settings: room.settings
+    };
+    
+    await RoomModel.findOneAndUpdate(
+      { roomId: room.id },
+      roomData,
+      { upsert: true, new: true }
+    );
+  } catch (err) {
+    console.error('Failed to save room to MongoDB:', err.message);
+  }
+}
+
+// Delete room from MongoDB
+async function deleteRoomFromMongo(roomId) {
+  if (!isMongoConnected()) return;
+  
+  try {
+    await RoomModel.deleteOne({ roomId });
+  } catch (err) {
+    console.error('Failed to delete room from MongoDB:', err.message);
+  }
+}
+
+// Save game history to MongoDB
+async function saveGameHistory(roomId, players, settings, startTime) {
+  if (!isMongoConnected()) return;
+  
+  try {
+    const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+    const duration = Math.floor((Date.now() - startTime) / 1000);
+    
+    await GameHistory.create({
+      roomId,
+      players: sortedPlayers.map((p, idx) => ({
+        id: p.id,
+        name: p.name,
+        finalScore: p.score,
+        rank: idx + 1
+      })),
+      totalRounds: settings.totalRounds,
+      duration,
+      winner: sortedPlayers[0] ? {
+        id: sortedPlayers[0].id,
+        name: sortedPlayers[0].name,
+        score: sortedPlayers[0].score
+      } : null,
+      settings: {
+        timeLimit: settings.timeLimit,
+        difficulty: settings.difficulty,
+        hintsEnabled: settings.hintsEnabled
+      }
+    });
+  } catch (err) {
+    console.error('Failed to save game history:', err.message);
+  }
+}
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -70,6 +155,42 @@ function checkGuessRateLimit(playerId) {
   return true;
 }
 
+function checkStrokeRateLimit(playerId) {
+  const now = Date.now();
+  let limit = strokeRateLimits.get(playerId);
+  
+  if (!limit || now > limit.resetTime) {
+    limit = { count: 0, resetTime: now + STROKE_WINDOW_MS };
+    strokeRateLimits.set(playerId, limit);
+  }
+  
+  if (limit.count >= STROKE_LIMIT) {
+    return false;
+  }
+  
+  limit.count++;
+  return true;
+}
+
+function validateStroke(stroke) {
+  // Validate stroke structure
+  if (!stroke || typeof stroke !== 'object') return false;
+  if (!stroke.id || typeof stroke.id !== 'string') return false;
+  if (!stroke.color || typeof stroke.color !== 'string') return false;
+  if (typeof stroke.width !== 'number' || stroke.width < 1 || stroke.width > 100) return false;
+  if (!Array.isArray(stroke.points)) return false;
+  if (stroke.points.length === 0 || stroke.points.length > MAX_POINTS_PER_STROKE) return false;
+  
+  // Validate each point is a valid coordinate pair
+  for (const point of stroke.points) {
+    if (!Array.isArray(point) || point.length !== 2) return false;
+    if (typeof point[0] !== 'number' || typeof point[1] !== 'number') return false;
+    if (point[0] < 0 || point[0] > 1 || point[1] < 0 || point[1] > 1) return false;
+  }
+  
+  return true;
+}
+
 function broadcastRoomUpdate(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
@@ -83,7 +204,7 @@ function broadcastRoomUpdate(roomId) {
   });
 }
 
-function cleanupPlayer(socket, isDisconnect = true) {
+async function cleanupPlayer(socket, isDisconnect = true) {
   const playerData = playerSockets.get(socket.id);
   if (!playerData) return;
   
@@ -120,6 +241,10 @@ function cleanupPlayer(socket, isDisconnect = true) {
       if (room.roundTimer) {
         clearTimeout(room.roundTimer);
       }
+      
+      // Delete from MongoDB
+      await deleteRoomFromMongo(roomId);
+      
       rooms.delete(roomId);
       console.log(`Room ${roomId} deleted (empty)`);
     } else {
@@ -192,7 +317,7 @@ io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
   
   // Create Room
-  socket.on('createRoom', ({ roomId: requestedRoomId, name }, callback) => {
+  socket.on('createRoom', async ({ roomId: requestedRoomId, name }, callback) => {
     const roomId = requestedRoomId || generateRoomCode();
     
     if (rooms.has(roomId)) {
@@ -203,6 +328,9 @@ io.on('connection', (socket) => {
     const room = new Room(roomId);
     room.addPlayer(playerId, name, socket.id, true);
     rooms.set(roomId, room);
+    
+    // Save to MongoDB
+    await saveRoomToMongo(room);
     
     socket.join(roomId);
     playerSockets.set(socket.id, { roomId, playerId, name });
@@ -232,7 +360,9 @@ io.on('connection', (socket) => {
     }
     
     if (room.stage !== 'lobby' && room.stage !== 'waiting') {
-      // Allow joining mid-game for rehydration
+      // Game is in progress - player joins as spectator initially
+      // They'll receive strokes for rehydration in the response
+      console.log(`Player ${name} joining mid-game in room ${room.id}`);
     }
     
     if (room.players.length >= 10) {
@@ -423,7 +553,9 @@ io.on('connection', (socket) => {
         wordHint: isDrawer ? null : initialHint,
         hintsEnabled,
         round: room.currentRound,
-        totalRounds: room.settings.totalRounds
+        totalRounds: room.settings.totalRounds,
+        serverTime: Date.now(),
+        roundEndTime: room.roundStartTime + (timeLimit * 1000)
       });
     });
     
@@ -486,6 +618,18 @@ io.on('connection', (socket) => {
     if (!room || !playerData) return;
     if (playerData.playerId !== room.currentDrawerId) return;
     
+    // Validate stroke data
+    if (!validateStroke(stroke)) {
+      console.log(`Invalid stroke from ${playerData.playerId}`);
+      return;
+    }
+    
+    // Rate limiting for strokes
+    if (!checkStrokeRateLimit(playerData.playerId)) {
+      // Silently drop excess strokes
+      return;
+    }
+    
     room.addStroke(stroke);
     socket.to(roomId).emit('stroke', { stroke });
   });
@@ -530,7 +674,7 @@ io.on('connection', (socket) => {
       return;
     }
     
-    const sanitizedText = filterProfanity(text.trim());
+    const sanitizedText = sanitizeHtml(filterProfanity(text.trim()));
     const guess = sanitizedText.toLowerCase();
     const correctWord = room.currentWord.toLowerCase();
     
@@ -573,7 +717,7 @@ io.on('connection', (socket) => {
     
     if (!room || !playerData) return;
     
-    const sanitizedText = filterProfanity(text.trim().substring(0, 200));
+    const sanitizedText = sanitizeHtml(filterProfanity(text.trim().substring(0, 200)));
     
     io.to(roomId).emit('chat', {
       id: playerData.playerId,
@@ -584,14 +728,14 @@ io.on('connection', (socket) => {
   });
   
   // Leave Room (intentional leave - don't store for rejoin)
-  socket.on('leaveRoom', ({ roomId }) => {
-    cleanupPlayer(socket, false); // false = intentional leave, don't store for rejoin
+  socket.on('leaveRoom', async ({ roomId }) => {
+    await cleanupPlayer(socket, false); // false = intentional leave, don't store for rejoin
   });
   
   // Disconnect (unintentional - store for rejoin)
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log(`Client disconnected: ${socket.id}`);
-    cleanupPlayer(socket, true); // true = store data for potential rejoin
+    await cleanupPlayer(socket, true); // true = store data for potential rejoin
   });
   
   // Player Ready Toggle
@@ -606,7 +750,7 @@ io.on('connection', (socket) => {
   });
   
   // Update Room Settings (host only)
-  socket.on('updateSettings', ({ roomId, settings }, callback) => {
+  socket.on('updateSettings', async ({ roomId, settings }, callback) => {
     const room = rooms.get(roomId);
     const playerData = playerSockets.get(socket.id);
     
@@ -626,6 +770,9 @@ io.on('connection', (socket) => {
     broadcastRoomUpdate(roomId);
     
     callback?.({ success: true, settings: updatedSettings });
+    
+    // Save to MongoDB
+    await saveRoomToMongo(room);
   });
   
   // ==================== Voice Chat WebRTC Signaling ====================
@@ -762,7 +909,7 @@ io.on('connection', (socket) => {
 });
 
 // End Round Logic
-function endRound(roomId, winnerId) {
+async function endRound(roomId, winnerId) {
   const room = rooms.get(roomId);
   if (!room) return;
   
@@ -788,12 +935,48 @@ function endRound(roomId, winnerId) {
   
   broadcastRoomUpdate(roomId);
   
+  // Save to MongoDB
+  await saveRoomToMongo(room);
+  
   // Check if game is over
   if (room.isGameOver()) {
+    const finalScores = room.getPublicPlayerList().sort((a, b) => b.score - a.score);
+    
+    // Save game history before room deletion
+    await saveGameHistory(
+      roomId,
+      room.players,
+      room.settings,
+      room.createdAt || Date.now()
+    );
+    
+    // Emit game over to all players
     io.to(roomId).emit('gameOver', {
-      finalScores: room.getPublicPlayerList().sort((a, b) => b.score - a.score)
+      finalScores,
+      roomExpiring: true,
+      message: 'Game completed! Room will be closed in 30 seconds.'
     });
-    room.resetGame();
+    
+    // Schedule room deletion after 30 seconds to allow players to see results
+    setTimeout(async () => {
+      console.log(`🗑️  Auto-expiring completed room: ${roomId}`);
+      
+      // Delete from MongoDB immediately
+      await deleteRoomFromMongo(roomId);
+      
+      // Remove from in-memory storage
+      rooms.delete(roomId);
+      
+      // Notify any remaining players
+      io.to(roomId).emit('roomExpired', {
+        message: 'This room has been closed. Thank you for playing!'
+      });
+      
+      // Disconnect all sockets from the room
+      io.in(roomId).socketsLeave(roomId);
+    }, 30000); // 30 seconds delay
+    
+    // Don't reset game - room will be deleted
   } else {
     // Auto-start next round after delay
     setTimeout(() => {
@@ -817,7 +1000,9 @@ function endRound(roomId, winnerId) {
             wordHint: isDrawer ? null : initialHint,
             hintsEnabled,
             round: room.currentRound,
-            totalRounds: room.settings.totalRounds
+            totalRounds: room.settings.totalRounds,
+            serverTime: Date.now(),
+            roundEndTime: room.roundStartTime + (timeLimit * 1000)
           });
         });
         
@@ -908,8 +1093,15 @@ app.get('/rooms', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 
-server.listen(PORT, () => {
-  console.log(`🎨 DoodleX server running on port ${PORT}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log(`📊 Allowed origins: ${CORS_ORIGINS.join(', ')}`);
+// Connect to MongoDB then start server
+connectDB().then(() => {
+  server.listen(PORT, () => {
+    console.log(`🎨 DoodleX server running on port ${PORT}`);
+    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+    console.log(`📊 Allowed origins: ${CORS_ORIGINS.join(', ')}`);
+    console.log(`💾 MongoDB: ${isMongoConnected() ? 'Connected' : 'Using in-memory storage'}`);
+  });
+}).catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });

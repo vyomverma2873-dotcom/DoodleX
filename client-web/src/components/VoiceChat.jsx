@@ -1,30 +1,25 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react'
 import './VoiceChat.css'
 
-// WebRTC configuration with STUN and free TURN servers for mobile NAT traversal
+// WebRTC configuration with STUN and TURN servers
+// Custom TURN credentials can be set via environment variables
+const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME || 'openrelayproject'
+const TURN_CREDENTIAL = import.meta.env.VITE_TURN_CREDENTIAL || 'openrelayproject'
+const TURN_SERVER = import.meta.env.VITE_TURN_SERVER || 'turn:openrelay.metered.ca'
+
 const RTC_CONFIG = {
   iceServers: [
+    // Google's free STUN servers
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    // Free TURN servers for better mobile connectivity
-    { 
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
+    // TURN servers for NAT traversal (free tier - openrelay.metered.ca)
+    // For production, set your own TURN server via environment variables
+    { urls: `${TURN_SERVER}:80`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+    { urls: `${TURN_SERVER}:443`, username: TURN_USERNAME, credential: TURN_CREDENTIAL },
+    { urls: `${TURN_SERVER}:443?transport=tcp`, username: TURN_USERNAME, credential: TURN_CREDENTIAL }
   ],
   iceCandidatePoolSize: 10
 }
@@ -720,15 +715,8 @@ const VoiceChat = forwardRef(({
     }
   }, [isVoiceEnabled, isMuted, speakingPlayers, mutedPlayers, voiceConnected, locallyMutedPlayers, audioLevels, localAudioLevel, onStateChange, playerId])
 
-  // Get player speaking/mute status for UI
-  const getPlayerVoiceStatus = (player) => {
-    const isSelf = player.id === playerId
-    const isConnected = isSelf ? isVoiceEnabled : voiceConnected.has(player.id)
-    const playerMuted = isSelf ? isMuted : mutedPlayers.get(player.id)
-    const playerSpeaking = isSelf ? false : speakingPlayers.has(player.id)
-    
-    return { isConnected, playerMuted, playerSpeaking }
-  }
+  // Note: getPlayerVoiceStatus is exposed via useImperativeHandle above
+  // The parent component should access it via ref.current.getPlayerVoiceStatus()
 
   return null // UI is handled by App.jsx header - this component only manages voice state
 }

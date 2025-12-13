@@ -27,7 +27,7 @@ const Footer = ({ onNavigate }) => (
   </footer>
 )
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'https://doodlex-backend.onrender.com'
 
 // Screens
 const SCREENS = {
@@ -131,6 +131,8 @@ function App() {
   const strokeThrottleRef = useRef(null)
   const timerRef = useRef(null)
   const messagesEndRef = useRef(null)
+  const roundEndTimeRef = useRef(null) // Server-synced round end time
+  const serverTimeOffsetRef = useRef(0) // Offset between server and client time
 
   // Initialize sounds
   useEffect(() => {
@@ -252,22 +254,39 @@ function App() {
       setScreen(SCREENS.GAME)
       setRoundWord(null)
       
+      // Sync with server time to prevent timer drift
+      if (data.serverTime && data.roundEndTime) {
+        serverTimeOffsetRef.current = Date.now() - data.serverTime
+        roundEndTimeRef.current = data.roundEndTime
+      }
+      
       // Clear canvas for new round
       if (ctxRef.current && canvasRef.current) {
         ctxRef.current.fillStyle = '#FFFFFF'
         ctxRef.current.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height)
       }
       
-      // Start timer
+      // Start timer using server-synced time
       if (timerRef.current) clearInterval(timerRef.current)
       timerRef.current = setInterval(() => {
-        setTimeRemaining(prev => {
-          if (prev <= 1) {
+        if (roundEndTimeRef.current) {
+          // Calculate remaining time based on server's round end time
+          const now = Date.now() - serverTimeOffsetRef.current
+          const remaining = Math.max(0, Math.ceil((roundEndTimeRef.current - now) / 1000))
+          setTimeRemaining(remaining)
+          if (remaining <= 0) {
             clearInterval(timerRef.current)
-            return 0
           }
-          return prev - 1
-        })
+        } else {
+          // Fallback to simple decrement if no server time available
+          setTimeRemaining(prev => {
+            if (prev <= 1) {
+              clearInterval(timerRef.current)
+              return 0
+            }
+            return prev - 1
+          })
+        }
       }, 1000)
       
       addMessage({
@@ -369,6 +388,28 @@ function App() {
       if (data.finalScores[0]?.id === playerId) {
         playWinSound()
       }
+      
+      // Show room expiration notice if applicable
+      if (data.roomExpiring) {
+        setError(data.message || 'Game completed! Room will close shortly.')
+        setTimeout(() => setError(''), 30000)
+      }
+    })
+    
+    // Handle room expiration
+    socket.on('roomExpired', (data) => {
+      setError(data.message || 'This room has been closed. Thank you for playing!')
+      // Reset game state
+      setStage('menu')
+      setRoomCode('')
+      setPlayerName('')
+      setPlayers([])
+      setFinalScores([])
+      setShowResults(false)
+      // Clear any existing timers
+      if (timerRef.current) clearInterval(timerRef.current)
+      // Remove session
+      localStorage.removeItem('doodlex_session')
     })
     
     socket.on('error', (err) => {
@@ -388,6 +429,7 @@ function App() {
       socket.off('correctGuess')
       socket.off('roundEnded')
       socket.off('gameOver')
+      socket.off('roomExpired')
       socket.off('error')
     }
   }, [socket, playerId])
@@ -652,9 +694,27 @@ function App() {
     if (timerRef.current) clearInterval(timerRef.current)
   }
 
-  const copyRoomCode = () => {
-    navigator.clipboard.writeText(roomCode)
-    addMessage({ id: 'system', name: 'System', text: 'Room code copied!', isSystem: true })
+  const copyRoomCode = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(roomCode)
+      } else {
+        // Fallback for older browsers or non-secure contexts
+        const textArea = document.createElement('textarea')
+        textArea.value = roomCode
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-9999px'
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      addMessage({ id: 'system', name: 'System', text: 'Room code copied!', isSystem: true })
+    } catch (err) {
+      console.error('Failed to copy:', err)
+      addMessage({ id: 'system', name: 'System', text: 'Failed to copy code', isSystem: true })
+    }
   }
 
   // Drawing functions
@@ -876,7 +936,7 @@ function App() {
     setGuessInput('')
   }
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       sendGuess()
     }
@@ -1486,7 +1546,7 @@ function App() {
                     placeholder="Type your guess..."
                     value={guessInput}
                     onChange={(e) => setGuessInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
+                    onKeyDown={handleKeyDown}
                     maxLength={50}
                   />
                   <button onClick={sendGuess}>Send</button>

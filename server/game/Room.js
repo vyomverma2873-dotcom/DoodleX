@@ -179,9 +179,11 @@ class Room {
   
   addStroke(stroke) {
     this.strokes.push(stroke);
-    // Keep only last 500 strokes for memory
-    if (this.strokes.length > 500) {
-      this.strokes = this.strokes.slice(-400);
+    // Gradual eviction: remove oldest stroke when exceeding limit
+    // This prevents sudden visual jumps for reconnecting players
+    const MAX_STROKES = 500;
+    if (this.strokes.length > MAX_STROKES) {
+      this.strokes.shift(); // Remove only the oldest stroke
     }
   }
   
