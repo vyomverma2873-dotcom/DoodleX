@@ -2546,60 +2546,6 @@ body {
 }
 
 /* Special Thanks Page */
-.special-thanks-content {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.special-thanks-image {
-  width: 100%;
-  max-width: 600px;
-  display: block;
-  margin: 0 auto 2rem auto;
-}
-
-.special-thanks-text h2 {
-  color: var(--accent);
-  margin: 1.5rem 0 0.5rem 0;
-  font-size: 1.5rem;
-}
-
-.special-thanks-text p {
-  margin-bottom: 1rem;
-  line-height: 1.6;
-}
-
-.contribution-note {
-  background: rgba(255, 112, 67, 0.1);
-  padding: 1rem;
-  border-radius: 8px;
-  border-left: 4px solid var(--accent);
-  font-style: italic;
-}
-
-.closing-message {
-  text-align: center;
-  font-weight: bold;
-  margin-top: 2rem;
-  padding: 1rem;
-  background: rgba(106, 27, 154, 0.1);
-  border-radius: 8px;
-}
-
-/* Special Thanks Page Mobile */
-@media (max-width: 768px) {
-  .special-thanks-content {
-    padding: 10px;
-  }
-  
-  .special-thanks-text h2 {
-    font-size: 1.3rem;
-  }
-}
-
-
-/* Special Thanks Page */
 .special-thanks-container {
   display: flex;
   flex-direction: column;
@@ -2618,6 +2564,8 @@ body {
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
 }
 
 .special-thanks-image:hover {
@@ -2632,6 +2580,11 @@ body {
 
 .special-thanks-text {
   line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.special-thanks-text p {
+  color: var(--text-secondary);
 }
 
 .contributor-section {
