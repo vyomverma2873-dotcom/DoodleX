@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { io } from 'socket.io-client'
 import { GridScan } from './components/GridScan'
 import VoiceChat from './components/VoiceChat'
@@ -1042,23 +1042,11 @@ function App() {
     )
   }
 
+  // Import Special Thanks component
+  const SpecialThanks = React.lazy(() => import('./components/SpecialThanks'));
+  
   // Special Thanks Page
   if (screen === SCREENS.SPECIALTHANKS) {
-    // Play win sound followed by wrong guess sound
-    const playSpecialThanksSounds = () => {
-      if (winSoundRef.current && wrongGuessSoundRef.current) {
-        // Play win sound first
-        winSoundRef.current.currentTime = 0;
-        winSoundRef.current.play().catch(e => console.log('Sound play failed:', e));
-        
-        // Play wrong guess sound after win sound finishes
-        setTimeout(() => {
-          wrongGuessSoundRef.current.currentTime = 0;
-          wrongGuessSoundRef.current.play().catch(e => console.log('Sound play failed:', e));
-        }, winSoundRef.current.duration * 1000 || 3000); // Fallback to 3 seconds if duration is not available
-      }
-    };
-    
     return (
       <ClickSpark sparkColor="#FFD700" sparkSize={12} sparkRadius={20} sparkCount={10} duration={500}>
         <div className="app">
@@ -1074,53 +1062,11 @@ function App() {
             chromaticAberration={0.002}
             noiseIntensity={0.01}
           />
-          <div className="info-page">
-            <button className="back-button" onClick={() => setScreen(SCREENS.HOME)}>
-              ← Back to Home
-            </button>
-            <h1 className="info-title">Special Thanks</h1>
-            <div className="special-thanks-content">
-              <img 
-                src="/special-thanks.jpg" 
-                alt="Special Thanks to Amitabh Bachchan and Dadi ji" 
-                className="special-thanks-image"
-                onClick={playSpecialThanksSounds}
-                style={{ 
-                  maxWidth: '60%', 
-                  height: 'auto', 
-                  borderRadius: '10px', 
-                  marginBottom: '2rem',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s ease',
-                  boxShadow: '0 4px 8px rgba(0,0,0,0.3)'
-                }}
-                onMouseDown={(e) => e.target.style.transform = 'scale(0.98)'}
-                onMouseUp={(e) => e.target.style.transform = 'scale(1)'}
-                onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
-                onTouchStart={(e) => {
-                  e.target.style.transform = 'scale(0.98)';
-                  e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-                }}
-                onTouchEnd={(e) => {
-                  e.target.style.transform = 'scale(1)';
-                  e.target.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-                }}
-              />
-              <div className="special-thanks-text">
-                <p>We extend our heartfelt gratitude to two remarkable individuals whose contributions have significantly enhanced the DoodleX gaming experience:</p>
-                
-                <h2>Amitabh Bachchan</h2>
-                <p>The legendary Bollywood icon whose distinctive voice brings excitement to our game. His voice is featured as the winning announcement, adding a touch of cinematic grandeur to every victory moment.</p>
-                
-                <h2>Dadi ji</h2>
-                <p>Our beloved grandmother figure whose warm and familiar voice provides gentle feedback during gameplay. Her voice plays when a player makes an incorrect guess, offering encouragement with a touch of familial warmth.</p>
-                
-                <p className="contribution-note">Their voices transform DoodleX from a simple drawing game into an emotionally engaging experience, connecting players with the magic of Indian cinema and the comfort of family bonds.</p>
-                
-                <p className="closing-message">Thank you for being part of our journey and for making DoodleX truly special!</p>
-              </div>
-            </div>
-          </div>
+          <SpecialThanks 
+            onBack={() => setScreen(SCREENS.HOME)} 
+            winSoundRef={winSoundRef}
+            wrongGuessSoundRef={wrongGuessSoundRef}
+          />
           <Footer onNavigate={handleNavigate} />
         </div>
       </ClickSpark>
