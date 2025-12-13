@@ -17,6 +17,8 @@ const Footer = ({ onNavigate }) => (
       <span className="footer-divider">•</span>
       <button className="footer-link" onClick={() => onNavigate('faq')}>FAQ</button>
       <span className="footer-divider">•</span>
+      <button className="footer-link" onClick={() => onNavigate('specialthanks')}>Special Thanks</button>
+      <span className="footer-divider">•</span>
       <button className="footer-link" onClick={() => onNavigate('contact')}>Contact Us</button>
     </div>
     <div className="footer-credits">
@@ -36,7 +38,8 @@ const SCREENS = {
   GAME: 'game',
   CONTACT: 'contact',
   HOWTOPLAY: 'howtoplay',
-  FAQ: 'faq'
+  FAQ: 'faq',
+  SPECIALTHANKS: 'specialthanks'
 }
 
 // Colors for drawing
@@ -965,6 +968,7 @@ function App() {
     if (page === 'contact') setScreen(SCREENS.CONTACT)
     else if (page === 'howtoplay') setScreen(SCREENS.HOWTOPLAY)
     else if (page === 'faq') setScreen(SCREENS.FAQ)
+    else if (page === 'specialthanks') setScreen(SCREENS.SPECIALTHANKS)
     else setScreen(SCREENS.HOME)
   }, [])
 
@@ -1032,6 +1036,56 @@ function App() {
             noiseIntensity={0.01}
           />
           <FAQ onBack={(page) => page === 'contact' ? setScreen(SCREENS.CONTACT) : setScreen(SCREENS.HOME)} />
+          <Footer onNavigate={handleNavigate} />
+        </div>
+      </ClickSpark>
+    )
+  }
+
+  // Special Thanks Page
+  if (screen === SCREENS.SPECIALTHANKS) {
+    return (
+      <ClickSpark sparkColor="#FFD700" sparkSize={12} sparkRadius={20} sparkCount={10} duration={500}>
+        <div className="app">
+          <GridScan
+            sensitivity={0.55}
+            lineThickness={1}
+            linesColor="#392e4e"
+            gridScale={0.1}
+            scanColor="#FF9FFC"
+            scanOpacity={0.4}
+            enablePost
+            bloomIntensity={0.6}
+            chromaticAberration={0.002}
+            noiseIntensity={0.01}
+          />
+          <div className="info-page">
+            <button className="back-button" onClick={() => setScreen(SCREENS.HOME)}>
+              ← Back to Home
+            </button>
+            <h1 className="info-title">Special Thanks</h1>
+            <div className="special-thanks-content">
+              <img 
+                src="/special-thanks.jpg" 
+                alt="Special Thanks to Amitabh Bachchan and Dadi ji" 
+                className="special-thanks-image"
+                style={{ maxWidth: '100%', height: 'auto', borderRadius: '10px', marginBottom: '2rem' }}
+              />
+              <div className="special-thanks-text">
+                <p>We extend our heartfelt gratitude to two remarkable individuals whose contributions have significantly enhanced the DoodleX gaming experience:</p>
+                
+                <h2>Amitabh Bachchan</h2>
+                <p>The legendary Bollywood icon whose distinctive voice brings excitement to our game. His voice is featured as the winning announcement, adding a touch of cinematic grandeur to every victory moment.</p>
+                
+                <h2>Dadi ji</h2>
+                <p>Our beloved grandmother figure whose warm and familiar voice provides gentle feedback during gameplay. Her voice plays when a player makes an incorrect guess, offering encouragement with a touch of familial warmth.</p>
+                
+                <p className="contribution-note">Their voices transform DoodleX from a simple drawing game into an emotionally engaging experience, connecting players with the magic of Indian cinema and the comfort of family bonds.</p>
+                
+                <p className="closing-message">Thank you for being part of our journey and for making DoodleX truly special!</p>
+              </div>
+            </div>
+          </div>
           <Footer onNavigate={handleNavigate} />
         </div>
       </ClickSpark>
