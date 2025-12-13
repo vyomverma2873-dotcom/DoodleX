@@ -1,4 +1,4 @@
-# Mehfil - Draw, Guess, Enjoy! 🎨
+# DoodleX - Draw, Guess, Enjoy! 🎨
 
 A Skribbl.io-style realtime multiplayer Draw & Guess game that runs on:
 - **Web** (desktop & mobile browsers)
@@ -47,12 +47,16 @@ Scan QR code with Expo Go app on your phone.
 ## Project Structure
 
 ```
-Mehfil/
+DoodleX/
 ├── server/                 # Node.js + Socket.IO server
 │   ├── server.js          # Main server file
 │   ├── game/              # Game logic
 │   │   ├── Room.js        # Room management
 │   │   └── WordBank.js    # Word lists
+│   ├── db/                # Database models and connections
+│   │   ├── mongodb.js     # MongoDB connection
+│   │   ├── Room.model.js  # Room schema
+│   │   └── GameHistory.model.js # Game history schema
 │   └── utils/             # Utilities
 │       └── profanityFilter.js
 │
@@ -67,10 +71,11 @@ Mehfil/
 │   ├── app.json           # Expo config
 │   └── assets/            # Icons and splash
 │
-├── shared/                # Shared constants
-│   └── constants.js
-│
-└── deliverables/          # Build instructions
+└── deliverables/          # Documentation and deployment guides
+    ├── AUTO-ROOM-EXPIRATION.md
+    ├── ICON-ASSETS-GUIDE.md
+    ├── MONGODB-INTEGRATION.md
+    ├── PRODUCTION-DEPLOYMENT.md
     ├── iOS-DEPLOYMENT-OPTIONS.txt
     ├── ANDROID-BUILD-INSTRUCTIONS.txt
     └── WEB-DEPLOYMENT-INSTRUCTIONS.txt
@@ -92,12 +97,22 @@ Mehfil/
 - Adjustable brush size
 - Eraser
 - Clear canvas
+- Flood fill
 
 ### Multiplayer
 - Up to 10 players per room
 - Host controls
 - Real-time stroke broadcasting
 - Canvas rehydration for late joiners
+- Voice chat (WebRTC)
+
+### Technical Features
+- MongoDB persistence with automatic cleanup
+- Immediate room expiration on game completion
+- Stroke validation and rate limiting
+- Server-synced timers
+- Progressive Web App (PWA) support
+- Cross-platform deployment
 
 ---
 
@@ -122,43 +137,68 @@ Use the ngrok URL in your clients.
 
 ## Environment Variables
 
-### Server (.env)
-```
+### Server (.env for Render Deployment)
+```env
+# Server Configuration
 PORT=3001
-NODE_ENV=development
-CORS_ORIGINS=http://localhost:5173,http://localhost:19006
-ADMIN_KEY=your-secret-key
+NODE_ENV=production
+
+# CORS - Production origins
+CORS_ORIGINS=https://doodlex.vercel.app,https://doodlex-backend.onrender.com
+
+# Admin API Key (CHANGE THIS TO A SECURE RANDOM STRING)
+ADMIN_KEY=your-secure-admin-key-here
+
+# MongoDB Connection
+MONGODB_URI=mongodb+srv://DoodleX:DoodleX%402873@cluster0.cywwieh.mongodb.net/?appName=Cluster0
+
+# Optional: Redis for scaling (not required for MVP)
+# REDIS_URL=redis://localhost:6379
 ```
 
-### Web Client (.env)
+### Web Client (.env for Vercel Deployment)
+```env
+# Server URL for production
+VITE_SERVER_URL=https://doodlex-backend.onrender.com
+
+# TURN Server Configuration (using free openrelay server)
+VITE_TURN_SERVER=turn:openrelay.metered.ca
+VITE_TURN_USERNAME=openrelayproject
+VITE_TURN_CREDENTIAL=openrelayproject
 ```
-VITE_SERVER_URL=http://localhost:3001
+
+### Mobile Client (.env for Expo Builds)
+```env
+# Server URL for production mobile app
+EXPO_PUBLIC_SERVER_URL=https://doodlex-backend.onrender.com
 ```
 
 ---
 
 ## Deployment
 
-See the `deliverables/` folder for detailed instructions:
-
-- **Web**: `WEB-DEPLOYMENT-INSTRUCTIONS.txt`
-- **Android**: `ANDROID-BUILD-INSTRUCTIONS.txt`  
-- **iOS**: `iOS-DEPLOYMENT-OPTIONS.txt`
+### Production URLs
+- **Backend**: https://doodlex-backend.onrender.com
+- **Frontend**: https://doodlex.vercel.app
 
 ### Quick Deploy Commands
 
 ```bash
-# Deploy server to Railway
+# Deploy server to Render
 cd server
-railway up
+# Set environment variables in Render dashboard
 
 # Deploy web to Vercel
 cd client-web
-vercel
+vercel --prod
 
 # Build Android APK
 cd client-mobile
-eas build --platform android --profile preview
+eas build --platform android --profile production
+
+# Build iOS App
+cd client-mobile
+eas build --platform ios --profile production
 ```
 
 ---
@@ -186,6 +226,7 @@ eas build --platform android --profile preview
 | `startRound` | `{roomId, difficulty?}` | Host starts game |
 | `stroke` | `{roomId, stroke}` | Send drawing stroke |
 | `clearCanvas` | `{roomId}` | Clear the canvas |
+| `fill` | `{roomId, color, x, y}` | Flood fill |
 | `guess` | `{roomId, text}` | Submit a guess |
 | `leaveRoom` | `{roomId}` | Leave the room |
 
@@ -197,8 +238,10 @@ eas build --platform android --profile preview
 | `roundStarted` | `{drawerId, timeLimit, word?}` | New round began |
 | `stroke` | `{stroke}` | Stroke from drawer |
 | `clearCanvas` | `{}` | Canvas cleared |
+| `fill` | `{color, x, y}` | Flood fill |
 | `correctGuess` | `{playerId, name, points}` | Someone guessed correctly |
 | `gameOver` | `{finalScores}` | Game ended |
+| `roomExpired` | `{message}` | Room automatically deleted |
 
 ---
 
@@ -218,10 +261,12 @@ eas build --platform android --profile preview
 
 ## Tech Stack
 
-- **Server**: Node.js, Express, Socket.IO
+- **Server**: Node.js, Express, Socket.IO, MongoDB/Mongoose
 - **Web**: React, Vite, HTML5 Canvas
 - **Mobile**: React Native, Expo, react-native-svg
 - **Realtime**: Socket.IO WebSockets
+- **Database**: MongoDB Atlas
+- **Deployment**: Render (Backend), Vercel (Frontend), Expo (Mobile)
 
 ---
 
@@ -243,6 +288,6 @@ MIT License - feel free to use for personal or commercial projects.
 
 ## Credits
 
-**Mehfil** - Made with ❤️ for drawing and guessing fun!
+**DoodleX** - Made with ❤️ for drawing and guessing fun!
 
 *Tagline: Draw, Guess, Enjoy!*
