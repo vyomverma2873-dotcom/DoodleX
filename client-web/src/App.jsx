@@ -6,6 +6,7 @@ import AudioWaveform from './components/AudioWaveform'
 import ContactUs from './components/ContactUs'
 import HowToPlay from './components/HowToPlay'
 import FAQ from './components/FAQ'
+import SpecialThanks from './components/SpecialThanks'
 import ClickSpark from './components/ClickSpark'
 import LoadingSpinner from './components/LoadingSpinner'
 
@@ -1042,9 +1043,6 @@ function App() {
     )
   }
 
-  // Import Special Thanks component
-  const SpecialThanks = React.lazy(() => import('./components/SpecialThanks'));
-  
   // Special Thanks Page
   if (screen === SCREENS.SPECIALTHANKS) {
     return (
